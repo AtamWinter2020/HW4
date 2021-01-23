@@ -162,6 +162,7 @@ void read_to_buffer(pid_t child_pid, void* start_addr, size_t bytes,
 void super_nice_and_fancy_debugger(pid_t child_pid, void* address,
                                    char* copy_flag, char* output_filename) {
     int wait_status;
+    long orig_rsp;
     long ret_data_backup;
     struct user_regs_struct regs;
     void* ret_addr;
@@ -184,6 +185,7 @@ void super_nice_and_fancy_debugger(pid_t child_pid, void* address,
             fclose(out_file);
             return;
         }
+        orig_rsp = regs.rsp;
 
         // Put breakpoint in ret addr
         // Get ret addr
@@ -200,23 +202,24 @@ void super_nice_and_fancy_debugger(pid_t child_pid, void* address,
                 exit(1);
             }
             GETREGS(&regs);
-            if ((void*)(regs.rip - 1) == ret_addr) {
+            if ((void*)(regs.rip - 1) == ret_addr && orig_rsp <= regs.rsp) {
                 break;
-            } else if (regs.orig_rax == 1) {
-                char* data = malloc(regs.rdx);
+            } else if (regs.orig_rax == 1 && (regs.rdi == 1 || regs.rdi == 2)) { // sys_write and to stdout
+                char* data = calloc(regs.rdx+1, sizeof(char));
                 read_to_buffer(child_pid, (void*)regs.rsi, regs.rdx, data);
                 fwrite(PREFIX, 1, strlen(PREFIX), out_file);
                 fwrite(data, 1, regs.rdx, out_file);
                 free(data);
 
                 if (*copy_flag == 'm' && copy_flag[1] == '\0') {
-                    regs.rdx = 0;  // TODO: Fix
+                    regs.rdx = 0;
                     SETREGS(&regs);
-                } else {
-                    // Assumed as copy ('c') so don't skip the syscall
-                    printf(PREFIX);
-                    fflush(stdout);
                 }
+                // else { // Uncomment this section if you want prefix when printing to the screen as well.
+                //     // Assumed as copy ('c') so don't skip the syscall
+                //     printf(PREFIX);
+                //     fflush(stdout);
+                // }
             }
             SYSCALL;
             wait(&wait_status);
