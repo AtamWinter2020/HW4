@@ -202,8 +202,21 @@ void super_nice_and_fancy_debugger(pid_t child_pid, void* address,
                 exit(1);
             }
             GETREGS(&regs);
-            if ((void*)(regs.rip - 1) == ret_addr && orig_rsp <= regs.rsp) {
-                break;
+            long orig_rdx = regs.rdx;
+            if ((void*)(regs.rip - 1) == ret_addr) {
+                if (orig_rsp <= regs.rsp) {
+                    break;
+                } else {
+                    restore_data(child_pid, ret_addr, ret_data_backup, &regs);
+                    ptrace(PTRACE_SINGLESTEP, child_pid, 0, NULL);
+                    wait(&wait_status);
+                    if (!WIFSTOPPED(wait_status)) {
+                        fprintf(stderr, "Wait for single step failed.\n");
+                        exit(1);
+                    }
+                    place_breakpoint(child_pid, ret_addr, &ret_data_backup);
+                    continue;
+                }
             } else if (regs.orig_rax == 1 &&
                        (regs.rdi == 1 ||
                         regs.rdi == 2)) {  // sys_write and to stdout
@@ -230,6 +243,8 @@ void super_nice_and_fancy_debugger(pid_t child_pid, void* address,
                 fprintf(stderr, "Function never returned from syscall.\n");
                 exit(1);
             }
+            regs.rdx = orig_rdx;
+            SETREGS(&regs);
         } while (1);
         restore_data(child_pid, ret_addr, ret_data_backup, &regs);
     }
