@@ -147,7 +147,7 @@ void read_to_buffer(pid_t child_pid, void* start_addr, size_t bytes,
     for (int i = 0; i < words_count; i++) {
         PEEKDATA(data, start_addr + 8 * i);
         if ((i + 1) * 8 > bytes) {
-            memcpy(buffer + 8 * i, &data, (((i + 1) * 8) - bytes));
+            memcpy(buffer + 8 * i, &data, bytes - i * 8);
             // for(int j = 0; j<(((i + 1) * 8)-bytes); j++){
             //     (buffer+8*i)[j] = data[j];
             // }
@@ -204,11 +204,14 @@ void super_nice_and_fancy_debugger(pid_t child_pid, void* address,
             GETREGS(&regs);
             if ((void*)(regs.rip - 1) == ret_addr && orig_rsp <= regs.rsp) {
                 break;
-            } else if (regs.orig_rax == 1 && (regs.rdi == 1 || regs.rdi == 2)) { // sys_write and to stdout
-                char* data = calloc(regs.rdx+1, sizeof(char));
+            } else if (regs.orig_rax == 1 &&
+                       (regs.rdi == 1 ||
+                        regs.rdi == 2)) {  // sys_write and to stdout
+                char* data = calloc(regs.rdx + 1, sizeof(char));
                 read_to_buffer(child_pid, (void*)regs.rsi, regs.rdx, data);
                 fwrite(PREFIX, 1, strlen(PREFIX), out_file);
                 fwrite(data, 1, regs.rdx, out_file);
+                fflush(out_file);
                 free(data);
 
                 if (*copy_flag == 'm' && copy_flag[1] == '\0') {
